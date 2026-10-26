@@ -1,0 +1,1 @@
+"""EduDesk AI application package."""
