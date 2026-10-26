@@ -21,7 +21,7 @@ def _path_from_env(name: str, default: Path) -> Path:
 DATA_DIR = ROOT_DIR / "data"
 KNOWLEDGE_DIR = ROOT_DIR / "data" / "knowledge_base"
 UPLOAD_DIR = _path_from_env("EDUDESK_UPLOAD_DIR", DATA_DIR / "uploads")
-DB_PATH = _path_from_env("EDUDESK_DB_PATH", DATA_DIR / "edudeska i.db".replace(" ", ""))
+DB_PATH = _path_from_env("EDUDESK_DB_PATH", DATA_DIR / "edudesk.db")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest").strip()
 API_URL = os.getenv("EDUDESK_API_URL", "http://127.0.0.1:8000").rstrip("/")
