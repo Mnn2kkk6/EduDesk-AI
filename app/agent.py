@@ -120,6 +120,43 @@ def _offline_answer(
         for item in retrieved[:3]
     ]
 
+    # Generic policy questions should use RAG instead of being mistaken for personal account issues.
+    policy_question = any(
+        phrase in text
+        for phrase in (
+            "chinh sach",
+            "hoan hoc phi",
+            "dieu kien hoan",
+            "thoi gian phan hoi",
+            "bao lau de",
+            "quy dinh",
+            "kich hoat quyen truy cap",
+            "refund policy",
+        )
+    )
+    personal_case = any(
+        phrase in text
+        for phrase in (
+            "em da",
+            "toi da",
+            "cua em",
+            "cua toi",
+            "ma sinh vien",
+            "sv001",
+            "sv002",
+            "sv003",
+            "chua truy cap duoc",
+            "khong vao duoc",
+            "khong hoc duoc",
+        )
+    )
+    if policy_question and not personal_case and source_lines:
+        return (
+            "Theo các đoạn tài liệu được truy xuất:\n\n"
+            + "\n\n".join(source_lines)
+            + "\n\nNguồn là tài liệu demo trong knowledge base; hãy kiểm tra nội dung trích dẫn trước khi áp dụng."
+        )
+
     asks_schedule = any(word in text for word in ("lich hoc", "khai giang", "schedule", "bat dau hoc"))
     asks_status = any(
         word in text
@@ -132,6 +169,8 @@ def _offline_answer(
             "enrollment",
             "payment",
             "access",
+            "trang thai",
+            "status",
         )
     )
     explicitly_requests_ticket = any(
@@ -227,6 +266,7 @@ def answer_with_agent(
             "warning": None,
         }
 
+    client = None
     try:
         from google import genai
         from google.genai import types
@@ -276,10 +316,8 @@ Instructions for this turn:
         answer = (response.text or "").strip()
         if not answer:
             answer = "Mình chưa tạo được câu trả lời bằng văn bản. Bạn hãy thử diễn đạt lại câu hỏi."
-        client.close()
         return {"answer": answer, "mode": "gemini", "warning": None}
     except Exception as exc:
-        # Preserve the demo path if a key is invalid, a model is unavailable, or quota is exhausted.
         return {
             "answer": _offline_answer(message, student_id, retrieved, tool_map),
             "mode": "demo_fallback_after_api_error",
@@ -288,3 +326,9 @@ Instructions for this turn:
                 f"Chi tiết: {str(exc)[:240]}"
             ),
         }
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
