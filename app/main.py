@@ -23,7 +23,7 @@ knowledge_base = KnowledgeBase([KNOWLEDGE_DIR, UPLOAD_DIR])
 app = FastAPI(
     title="EduDesk AI API",
     description="RAG-powered student support assistant with controlled SQLite tools.",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -36,6 +36,11 @@ class ChatRequest(BaseModel):
     student_id: str = Field(default="SV001", min_length=1, max_length=20)
     message: str = Field(min_length=1, max_length=3000)
     history: list[ChatTurn] = Field(default_factory=list)
+
+
+class TicketStatusUpdate(BaseModel):
+    status: Literal["open", "in_progress", "resolved"]
+    note: str = Field(default="", max_length=500)
 
 
 @app.on_event("startup")
@@ -55,28 +60,77 @@ def root() -> dict:
 
 @app.get("/api/v1/health")
 def health() -> dict:
+    counts = database.get_data_counts()
     return {
         "status": "ok",
         "llm_configured": bool(GEMINI_API_KEY),
         "mode": "gemini" if GEMINI_API_KEY else "demo_fallback",
         "retrieval_chunks": knowledge_base.chunk_count,
         "documents": knowledge_base.sources(),
+        "data_counts": counts,
     }
+
+
+@app.get("/api/v1/students")
+def students() -> dict:
+    return {"students": database.get_students()}
+
+
+@app.get("/api/v1/enrollments")
+def enrollments() -> dict:
+    return {"enrollments": database.get_enrollments()}
 
 
 @app.get("/api/v1/courses")
 def courses() -> dict:
-    database.init_db()
     return {"courses": database.get_courses()}
 
 
 @app.get("/api/v1/tickets")
 def tickets(
     student_id: str | None = Query(default=None, max_length=20),
+    status: Literal["open", "in_progress", "resolved"] | None = None,
+    priority: Literal["low", "medium", "high"] | None = None,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> dict:
-    database.init_db()
-    return {"tickets": database.list_tickets(student_id=student_id, limit=limit)}
+    return {
+        "tickets": database.list_tickets(
+            student_id=student_id,
+            status=status,
+            priority=priority,
+            limit=limit,
+        )
+    }
+
+
+@app.get("/api/v1/tickets/{ticket_code}")
+def ticket_detail(ticket_code: str) -> dict:
+    ticket = database.get_ticket(ticket_code)
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return {
+        "ticket": ticket,
+        "events": database.list_ticket_events(ticket_code),
+    }
+
+
+@app.patch("/api/v1/tickets/{ticket_code}/status")
+def update_ticket_status(ticket_code: str, update: TicketStatusUpdate) -> dict:
+    try:
+        ticket = database.update_ticket_status(
+            ticket_code,
+            new_status=update.status,
+            note=update.note,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found.")
+    return {
+        "success": True,
+        "ticket": ticket,
+        "events": database.list_ticket_events(ticket_code),
+    }
 
 
 @app.get("/api/v1/documents")
@@ -86,7 +140,6 @@ def documents() -> dict:
 
 @app.post("/api/v1/chat")
 def chat(request: ChatRequest) -> dict:
-    database.init_db()
     student_id = request.student_id.strip().upper()
     if not database.get_student(student_id):
         raise HTTPException(status_code=404, detail="Student ID not found. Try SV001, SV002, or SV003.")
